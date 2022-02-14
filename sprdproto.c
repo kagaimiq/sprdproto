@@ -43,11 +43,6 @@ int loadAndExecFile(char *path, uint32_t addr) {
 
 
 int main(int argc, char **argv) {
-	int rc = 0;
-
-	puts("spreadtrum io tool ...");
-	printf("compiled %s - %s\n", __DATE__, __TIME__);
-	
 	if (argc < 3) {
 		printf("Usage: %s <payload addr> <payload file> [<2nd payload addr> <2nd payload file>]\n",
 			argv[0]);
@@ -56,7 +51,7 @@ int main(int argc, char **argv) {
 		"\n"
 		"The first payload will be loaded using the BootROM protocol,\n"
 		" If the second payload is specified, then it will be loaded using the\n"
-		" BootBLK protocol, which is provided by the first payload.\n"
+		" FDL protocol, which is provided by the first payload.\n"
 		);
 		
 		return 1;
@@ -64,28 +59,29 @@ int main(int argc, char **argv) {
 
 	libusb_init(NULL);
 	
+	int rc = 2;
+	
 	/* ========= First stage ========== */
 	puts("---------- First stage ---------");
 	
 	if (sprdIoOpen(528, false, 10000)) {
-		printf("open spreadtrum device fail... %d - %s\n", errno, strerror(errno));
-		rc = 2;
+		printf("failed to open spreadtrum device [%d:%s]\n", errno, strerror(errno));
 		goto Exit;
 	}
 	
-	if ((rc = sprdIoDoHandshake())) {
-		printf("bootrom handshake fail! [%d]\n", rc);
-		goto Exit;
+	if (sprdIoDoHandshake()) {
+		puts("bootrom handshake failed!");
+		goto ExitClose;
 	}
 	
-	if ((rc = sprdIoDoConnect())) {
-		printf("bootrom connect fail! [%d]\n", rc);
-		goto Exit;
+	if (sprdIoDoConnect()) {
+		puts("bootrom connect failed!");
+		goto ExitClose;
 	}
 	
-	if ((rc = loadAndExecFile(argv[2], strtoul(argv[1], NULL, 0)))) {
-		printf("bootrom load&exec fail! [%d]\n", rc);
-		goto Exit2;
+	if (loadAndExecFile(argv[2], strtoul(argv[1], NULL, 0))) {
+		puts("bootrom load&exec failed!");
+		goto ExitClose;
 	}
 	
 	/* ========= Second Stage ========= */
@@ -93,29 +89,31 @@ int main(int argc, char **argv) {
 		puts("---------- Second stage ---------");
 		sprdIoClose();
 		
+		/* wait to device disconnect then connect again */
 		usleep(1000000);
 		
-		sprdIoOpen(2112, true, 2000);
-		
-		if ((rc = sprdIoDoHandshake())) {
-			printf("bootblk handshake fail! [%d]\n", rc);
+		if (sprdIoOpen(2112, true, 2000)) {
+			printf("failed to open fdl device [%d:%s]\n", errno, strerror(errno));
 			goto Exit;
 		}
 		
-		if ((rc = sprdIoDoConnect())) {
-			printf("bootblk connect fail! [%d]\n", rc);
-			goto Exit;
+		if (sprdIoDoHandshake()) {
+			puts("fdl handshake failed!");
+			goto ExitClose;
 		}
 		
-		if ((rc = loadAndExecFile(argv[4], strtoul(argv[3], NULL, 0)))) {
-			printf("bootblk load&exec fail! [%d]\n", rc);
-			goto Exit2;
+		if (sprdIoDoConnect()) {
+			puts("fdl connect failed!");
+			goto ExitClose;
 		}
+		
+		/* this always fails (the ack is then sent from U-Boot i guess) */
+		loadAndExecFile(argv[4], strtoul(argv[3], NULL, 0));
 	}
 
-Exit2:
+	rc = 0;
+ExitClose:
 	sprdIoClose();
-	
 Exit:
 	libusb_exit(NULL);
 	return rc;
