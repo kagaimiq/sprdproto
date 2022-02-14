@@ -58,15 +58,15 @@ int sprdIoOpen(int maxPktSize, bool useSprdChksum, int timeout) {
 		if (libusb_control_transfer(sprdIoDev, 0x21, 34, 0x0601, 0x0000, NULL, 0, sprdIoTimeout) < 0) {
 			libusb_close(sprdIoDev);
 			sprdIoDev = NULL;
-			printf("fail - cant send the control request\n");
+			puts("fail - cant send the control request");
 			return -1;
 		}
 		
-		printf("ok\n");
+		puts("ok");
 		return 0;
 	}
 	
-	printf("fail - spurious error\n");
+	puts("fail - spurious error");
 	return -1;
 }
 
@@ -81,9 +81,9 @@ void sprdIoClose(void) {
 int sprdIoSend(const uint8_t *data, int len) {
 	if (sprdIoDev) {
 		int trn;
-		if (libusb_bulk_transfer(sprdIoDev, sprdIoEpOut, (uint8_t*)data, len, &trn, sprdIoTimeout) < 0) {
+		
+		if (libusb_bulk_transfer(sprdIoDev, sprdIoEpOut, (uint8_t*)data, len, &trn, sprdIoTimeout) < 0)
 			return -1;
-		}
 		
 		return trn;
 	}
@@ -93,9 +93,9 @@ int sprdIoSend(const uint8_t *data, int len) {
 int sprdIoRecv(uint8_t *data, int len) {
 	if (sprdIoDev) {
 		int trn;
-		if (libusb_bulk_transfer(sprdIoDev, sprdIoEpIn, data, len, &trn, sprdIoTimeout) < 0) {
+		
+		if (libusb_bulk_transfer(sprdIoDev, sprdIoEpIn, data, len, &trn, sprdIoTimeout) < 0)
 			return -1;
-		}
 		
 		return trn;
 	}
@@ -158,13 +158,13 @@ int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
 			rc = sprdIoSend(packet, n);
 			if (rc < n) {
 				rc = -1;
-				goto Exit;
+				goto ExitFreePacket;
 			}
 			
 			//since we check for full packet transmission, we'll just
 			// put there the data length...
 			rc = len;
-Exit:
+ExitFreePacket:
 			free(packet);
 		}
 
@@ -184,7 +184,7 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 		int rc = sprdIoRecv(packet, maxPktLen);
 		if (rc <= 2) {
 			rc = -1;
-			goto Exit;
+			goto ExitFreePacket;
 		}
 		
 		//------find packet start-------
@@ -223,7 +223,7 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 			//if it can't hold cmd+len+crc in it, discard it
 			if (dataLenRecv < 2+2+2) {
 				rc = -1;
-				goto Exit2;
+				goto ExitFreePacketc;
 			}
 			
 			//calculate the crc of packet contents excludng the crc itself
@@ -251,17 +251,17 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 			if (crc != ccrc) {
 				printf("!!! INVAID CRC recv-%04x != calc-%04x\n", crc, ccrc);
 				rc = -1;
-				goto Exit2;
+				goto ExitFreePacketc;
 			}
 			
 			//set the rc to the copied length
 			rc = len;
 			
-Exit2:
+ExitFreePacketc:
 			free(packetc);
 		}
 
-Exit:
+ExitFreePacket:
 		free(packet);
 		return rc;
 	}
@@ -274,16 +274,14 @@ int sprdIoDoSendCmd(uint16_t cmd, uint16_t *resp, const void *sdata, uint16_t sl
 	
 	if ((rc = sprdIoSendPacket(cmd, sdata, slen)) < slen) {
 		printf("[SendCMD] failed to send cmd %04x, [%p %d]! [%d]\n",
-			cmd, sdata, slen, rc);
-		if (rc >= 0) rc = -1;
-		return rc;
+			cmd, sdata, slen);
+		return -1;
 	}
 	
 	if ((rc = sprdIoRecvPacket(resp, rdata, rlen)) < rlen) {
 		printf("[SendCMD] failed to recv resp, [%p %d]! [%d]\n",
 			rdata, rlen, rc);
-		if (rc >= 0) rc = -1;
-		return rc;
+		return -1;
 	}
 	
 	return 0;
@@ -294,33 +292,27 @@ int sprdIoDoHandshake(void) {
 	uint16_t pktResp;
 	int rc;
 	
-	if ((rc = sprdIoSend(tmp, 1)) < 1) {
-		if (rc >= 0) rc = -1;
-		return rc;
-	}
+	if (sprdIoSend(tmp, 1) < 1)
+		return -1;
 	
-	if ((rc = sprdIoRecvPacket(&pktResp, tmp, sizeof tmp)) <= 0) {
-		if (rc >= 0) rc = -1;
-		return rc;
-	}
+	if ((rc = sprdIoRecvPacket(&pktResp, tmp, sizeof tmp)) < 0)
+		return -1;
 	
 	printf("===> [%.*s]\n", rc, tmp);
 	
-	if (pktResp != 0x0081) {
+	if (pktResp != 0x0081)
 		return -1;
-	}
 
 	return 0;
 }
 
 int sprdIoDoConnect(void) {
 	uint16_t pktResp;
-	int rc;
 	
 	//------- Send CMD_CONNECT --------
-	if ((rc = sprdIoDoSendCmd(0x0000, &pktResp, NULL, 0, NULL, 0)) < 0) {
-		printf("[Connect] failed to send CMD_CONNECT! [%d]\n", rc);
-		return rc;
+	if (sprdIoDoSendCmd(0x0000, &pktResp, NULL, 0, NULL, 0)) {
+		puts("[Connect] failed to send CMD_CONNECT!");
+		return -1;
 	}
 	
 	if (pktResp != 0x0080) {
@@ -334,12 +326,11 @@ int sprdIoDoConnect(void) {
 int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 	uint8_t tmp[8] = {addr>>24,addr>>16,addr>>8,addr, len>>24,len>>16,len>>8,len};
 	uint16_t pktResp;
-	int rc;
 	
 	//------- Send CMD_START_DATA --------
-	if ((rc = sprdIoDoSendCmd(0x0001, &pktResp, tmp, 8, NULL, 0)) < 0) {
-		printf("[Send Data] failed to send CMD_START_DATA! [%d]\n", rc);
-		return rc;
+	if (sprdIoDoSendCmd(0x0001, &pktResp, tmp, 8, NULL, 0)) {
+		puts("[Send Data] failed to send CMD_START_DATA!");
+		return -1;
 	}
 	
 	if (pktResp != 0x0080) {
@@ -359,9 +350,9 @@ int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 			addr+doff, doff, psize);
 		
 		//------- Send CMD_MID_DATA --------
-		if ((rc = sprdIoDoSendCmd(0x0002, &pktResp, data+doff, psize, NULL, 0)) < 0) {
-			printf("[Send Data] failed to send CMD_MID_DATA! [%d]\n", rc);
-			return rc;
+		if (sprdIoDoSendCmd(0x0002, &pktResp, data+doff, psize, NULL, 0)) {
+			puts("[Send Data] failed to send CMD_MID_DATA!");
+			return -1;
 		}
 		
 		if (pktResp != 0x0080) {
@@ -374,9 +365,9 @@ int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 	}
 
 	//------- Send CMD_END_DATA --------
-	if ((rc = sprdIoDoSendCmd(0x0003, &pktResp, NULL, 0, NULL, 0)) < 0) {
-		printf("[Send Data] failed to send CMD_END_DATA! [%d]\n", rc);
-		return rc;
+	if (sprdIoDoSendCmd(0x0003, &pktResp, NULL, 0, NULL, 0)) {
+		puts("[Send Data] failed to send CMD_END_DATA!");
+		return -1;
 	}
 	
 	if (pktResp != 0x0080) {
@@ -389,12 +380,11 @@ int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 
 int sprdIoDoExecData(void) {
 	uint16_t pktResp;
-	int rc;
 	
 	//------- Send CMD_EXEC_DATA --------
-	if ((rc = sprdIoDoSendCmd(0x0004, &pktResp, NULL, 0, NULL, 0)) < 0) {
-		printf("[Send Data] failed to send CMD_EXEC_DATA! [%d]\n", rc);
-		return rc;
+	if (sprdIoDoSendCmd(0x0004, &pktResp, NULL, 0, NULL, 0)) {
+		puts("[Send Data] failed to send CMD_EXEC_DATA!");
+		return -1;
 	}
 	
 	if (pktResp != 0x0080) {
