@@ -48,58 +48,49 @@ int sprdIoOpen(int maxPktSize, bool useSprdChksum, int timeout) {
 		usleep(500000);
 	}
 	
-	if (sprdIoDev) {
-		sprdIoMaxDataSz = maxPktSize;
-		sprdIoUseSprdChksum = useSprdChksum;
-		sprdIoTimeout = timeout;
-	
-		//TODO: get endpoint stuff, etc
-	
-		if (libusb_control_transfer(sprdIoDev, 0x21, 34, 0x0601, 0x0000, NULL, 0, sprdIoTimeout) < 0) {
-			libusb_close(sprdIoDev);
-			sprdIoDev = NULL;
-			puts("fail - cant send the control request");
-			return -1;
-		}
-		
-		puts("ok");
-		return 0;
+	sprdIoMaxDataSz = maxPktSize;
+	sprdIoUseSprdChksum = useSprdChksum;
+	sprdIoTimeout = timeout;
+
+	//TODO: get endpoint stuff, etc
+
+	if (libusb_control_transfer(sprdIoDev, 0x21, 34, 0x0601, 0x0000, NULL, 0, sprdIoTimeout) < 0) {
+		libusb_close(sprdIoDev);
+		sprdIoDev = NULL;
+		puts("fail - cant send the control request");
+		return -1;
 	}
-	
-	puts("fail - spurious error");
-	return -1;
+
+	puts("ok");
+	return 0;
 }
 
 void sprdIoClose(void) {
-	if (sprdIoDev) {
-		//libusb_control_transfer(sprdIoDev, 0x21, 34, 0x0000, 0x0000, NULL, 0, sprdIoTimeout);
-		libusb_close(sprdIoDev);
-		sprdIoDev = NULL;
-	}
+	if (!sprdIoDev) return;
+	
+	//libusb_control_transfer(sprdIoDev, 0x21, 34, 0x0000, 0x0000, NULL, 0, sprdIoTimeout);
+	libusb_close(sprdIoDev);
+	sprdIoDev = NULL;
 }
 
 int sprdIoSend(const uint8_t *data, int len) {
-	if (sprdIoDev) {
-		int trn;
-		
-		if (libusb_bulk_transfer(sprdIoDev, sprdIoEpOut, (uint8_t*)data, len, &trn, sprdIoTimeout) < 0)
-			return -1;
-		
-		return trn;
-	}
-	return -1;
+	if (!sprdIoDev) return -1;
+	
+	int trn;
+	if (libusb_bulk_transfer(sprdIoDev, sprdIoEpOut, (uint8_t*)data, len, &trn, sprdIoTimeout) < 0)
+		return -1;
+	
+	return trn;
 }
 
 int sprdIoRecv(uint8_t *data, int len) {
-	if (sprdIoDev) {
-		int trn;
-		
-		if (libusb_bulk_transfer(sprdIoDev, sprdIoEpIn, data, len, &trn, sprdIoTimeout) < 0)
-			return -1;
-		
-		return trn;
-	}
-	return -1;
+	if (!sprdIoDev) return -1;
+	
+	int trn;
+	if (libusb_bulk_transfer(sprdIoDev, sprdIoEpIn, data, len, &trn, sprdIoTimeout) < 0)
+		return -1;
+	
+	return trn;
 }
 
 int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
@@ -155,11 +146,8 @@ int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
 			//end
 			packet[n++] = 0x7e;
 
-			rc = sprdIoSend(packet, n);
-			if (rc < n) {
-				rc = -1;
+			if (sprdIoSend(packet, n) < n)
 				goto ExitFreePacket;
-			}
 			
 			//since we check for full packet transmission, we'll just
 			// put there the data length...
@@ -199,7 +187,6 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 			if (packet[n + pktSize++] == 0x7e) break;
 		}
 
-		//set rc to -1 for malloc failure
 		rc = -1;
 
 		uint8_t *packetc = malloc(pktSize);
@@ -221,10 +208,8 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 			}
 			
 			//if it can't hold cmd+len+crc in it, discard it
-			if (dataLenRecv < 2+2+2) {
-				rc = -1;
+			if (dataLenRecv < 2+2+2)
 				goto ExitFreePacketc;
-			}
 			
 			//calculate the crc of packet contents excludng the crc itself
 			uint16_t ccrc = 
@@ -249,8 +234,7 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 			//gather the crc and check if it's valid
 			uint16_t crc = packetc[n++] << 8 | packetc[n++];
 			if (crc != ccrc) {
-				printf("!!! INVAID CRC recv-%04x != calc-%04x\n", crc, ccrc);
-				rc = -1;
+				printf("*** Invalid checksum! recv-%04x != calc-%04x ***\n", crc, ccrc);
 				goto ExitFreePacketc;
 			}
 			
@@ -274,7 +258,7 @@ int sprdIoDoSendCmd(uint16_t cmd, uint16_t *resp, const void *sdata, uint16_t sl
 	
 	if ((rc = sprdIoSendPacket(cmd, sdata, slen)) < slen) {
 		printf("[SendCMD] failed to send cmd %04x, [%p %d]! [%d]\n",
-			cmd, sdata, slen);
+			cmd, sdata, slen, rc);
 		return -1;
 	}
 	
