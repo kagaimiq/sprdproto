@@ -13,7 +13,7 @@ bool sprdIoUseSprdChksum = false;
 
 uint16_t sprdChksumCalc(const void *data, int len) {
 	uint32_t ctr = 0;
-	
+
 	while (len > 0) {
 		if (len >= 2) {
 			ctr += *(uint16_t*)data;
@@ -23,7 +23,7 @@ uint16_t sprdChksumCalc(const void *data, int len) {
 			data += 1; len -= 1;
 		}
 	}
-	
+
 	ctr = (ctr >> 16) + (ctr & 0xffff);
 	ctr = ~(ctr + (ctr >> 16)) & 0xffff;
 	return (ctr >> 8) | (ctr << 8);
@@ -35,7 +35,7 @@ uint16_t crc16calc(const void *data, int len, uint16_t crc) {
 		for (int i = 0; i < 8; i++)
 			crc = (crc << 1) ^ ((crc >> 15) ? 0x1021 : 0);
 	}
-	
+
 	return crc;
 }
 
@@ -47,7 +47,7 @@ int sprdIoOpen(int maxPktSize, bool useSprdChksum, int timeout) {
 		putchar('.'); fflush(stdout);
 		usleep(500000);
 	}
-	
+
 	sprdIoMaxDataSz = maxPktSize;
 	sprdIoUseSprdChksum = useSprdChksum;
 	sprdIoTimeout = timeout;
@@ -67,7 +67,7 @@ int sprdIoOpen(int maxPktSize, bool useSprdChksum, int timeout) {
 
 void sprdIoClose(void) {
 	if (!sprdIoDev) return;
-	
+
 	//libusb_control_transfer(sprdIoDev, 0x21, 34, 0x0000, 0x0000, NULL, 0, sprdIoTimeout);
 	libusb_close(sprdIoDev);
 	sprdIoDev = NULL;
@@ -75,31 +75,31 @@ void sprdIoClose(void) {
 
 int sprdIoSend(const uint8_t *data, int len) {
 	if (!sprdIoDev) return -1;
-	
+
 	int trn;
 	if (libusb_bulk_transfer(sprdIoDev, sprdIoEpOut, (uint8_t*)data, len, &trn, sprdIoTimeout) < 0)
 		return -1;
-	
+
 	return trn;
 }
 
 int sprdIoRecv(uint8_t *data, int len) {
 	if (!sprdIoDev) return -1;
-	
+
 	int trn;
 	if (libusb_bulk_transfer(sprdIoDev, sprdIoEpIn, data, len, &trn, sprdIoTimeout) < 0)
 		return -1;
-	
+
 	return trn;
 }
 
 int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
 	if (!data) len = 0;
-	
+
 	uint8_t *packetc = malloc(2+2+len+2); //cmd+len+data+crc
 	if (packetc) {
 		int rc = -1;
-		
+
 		//------- Prepare command packet --------
 		int packetcLen = 0;
 		//cmd
@@ -117,7 +117,7 @@ int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
 				:crc16calc(packetc, packetcLen, 0x0000);
 		packetc[packetcLen++] = crc >> 8;
 		packetc[packetcLen++] = crc >> 0;
-		
+
 		//------ Calculate real packet length -------
 		int packetLen = 0;
 		for (int i = 0; i < packetcLen; i++) {
@@ -125,7 +125,7 @@ int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
 			if (packetc[i] == 0x7d) packetLen++;  //<-Escape symbol, escaped
 			if (packetc[i] == 0x7e) packetLen++;  //<-Start/End marks, escaped
 		}
-		
+
 		//------ Make real packet ------
 		uint8_t *packet = malloc(1+packetLen+1); //start+contents+end
 		if (packet) {
@@ -159,13 +159,13 @@ ExitFreePacket:
 		free(packetc);
 		return rc;
 	}
-	
+
 	return -1;
 }
 
 int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 	if (!data) len = 0;
-	
+
 	int maxPktLen = 1 + (2 + 2 + 65535 + 2)*2 + 1; //start+cmd+len+data+crc+end, twise as large to fit escaped bytes
 	uint8_t *packet = malloc(maxPktLen);
 	if (packet) {
@@ -174,13 +174,13 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 			rc = -1;
 			goto ExitFreePacket;
 		}
-		
+
 		//------find packet start-------
 		int n = 0;
 		while (n < rc) {
 			if (packet[n++] == 0x7e) break;
 		}
-		
+
 		//-----find packet end------
 		int pktSize = 0;
 		while (pktSize < rc) {
@@ -197,50 +197,50 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 				//skip the start/end marks
 				if (packet[i] == 0x7e)
 					continue;
-				
+
 				//if this is the escape code, de-escape the byte after it
 				if (packet[i] == 0x7d) {
 					packetc[dataLenRecv++] = packet[++i] ^ 0x20;
 					continue;
 				}
-				
+
 				packetc[dataLenRecv++] = packet[i];
 			}
-			
+
 			//if it can't hold cmd+len+crc in it, discard it
 			if (dataLenRecv < 2+2+2)
 				goto ExitFreePacketc;
-			
+
 			//calculate the crc of packet contents excludng the crc itself
 			uint16_t ccrc = 
 				sprdIoUseSprdChksum?sprdChksumCalc(packetc, dataLenRecv-2)
 				:crc16calc(packetc, dataLenRecv-2, 0x0000);
-			
+
 			n = 0;
-			
+
 			//gather the cmd
 			*cmd = packetc[n++] << 8 | packetc[n++];
-			
+
 			//gather the data length
 			uint16_t dlen = packetc[n++] << 8 | packetc[n++];
 			//TODO: maybe adjust the dlen to the actual received data length??
-			
+
 			//adjust the length
 			len = len < dlen ? len : dlen;
-			
+
 			//copy the data into the buffer
 			memcpy(data, &packetc[n], len); n += dlen;
-			
+
 			//gather the crc and check if it's valid
 			uint16_t crc = packetc[n++] << 8 | packetc[n++];
 			if (crc != ccrc) {
 				printf("*** Invalid checksum! recv-%04x != calc-%04x ***\n", crc, ccrc);
 				goto ExitFreePacketc;
 			}
-			
+
 			//set the rc to the copied length
 			rc = len;
-			
+
 ExitFreePacketc:
 			free(packetc);
 		}
@@ -249,25 +249,25 @@ ExitFreePacket:
 		free(packet);
 		return rc;
 	}
-	
+
 	return -1;
 }
 
 int sprdIoDoSendCmd(uint16_t cmd, uint16_t *resp, const void *sdata, uint16_t slen, void *rdata, uint16_t rlen) {
 	int rc;
-	
+
 	if ((rc = sprdIoSendPacket(cmd, sdata, slen)) < slen) {
 		printf("[SendCMD] failed to send cmd %04x, [%p %d]! [%d]\n",
 			cmd, sdata, slen, rc);
 		return -1;
 	}
-	
+
 	if ((rc = sprdIoRecvPacket(resp, rdata, rlen)) < rlen) {
 		printf("[SendCMD] failed to recv resp, [%p %d]! [%d]\n",
 			rdata, rlen, rc);
 		return -1;
 	}
-	
+
 	return 0;
 }
 
@@ -275,15 +275,15 @@ int sprdIoDoHandshake(void) {
 	uint8_t tmp[64] = {0x7e};
 	uint16_t pktResp;
 	int rc;
-	
+
 	if (sprdIoSend(tmp, 1) < 1)
 		return -1;
-	
+
 	if ((rc = sprdIoRecvPacket(&pktResp, tmp, sizeof tmp)) < 0)
 		return -1;
-	
+
 	printf("===> [%.*s]\n", rc, tmp);
-	
+
 	if (pktResp != 0x0081)
 		return -1;
 
@@ -292,58 +292,58 @@ int sprdIoDoHandshake(void) {
 
 int sprdIoDoConnect(void) {
 	uint16_t pktResp;
-	
+
 	//------- Send CMD_CONNECT --------
 	if (sprdIoDoSendCmd(0x0000, &pktResp, NULL, 0, NULL, 0)) {
 		puts("[Connect] failed to send CMD_CONNECT!");
 		return -1;
 	}
-	
+
 	if (pktResp != 0x0080) {
 		printf("[Connect] invalid response of CMD_CONNECT! %04x!\n", pktResp);
 		return -1;
 	}
-	
+
 	return 0;
 }
 
 int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 	uint8_t tmp[8] = {addr>>24,addr>>16,addr>>8,addr, len>>24,len>>16,len>>8,len};
 	uint16_t pktResp;
-	
+
 	//------- Send CMD_START_DATA --------
 	if (sprdIoDoSendCmd(0x0001, &pktResp, tmp, 8, NULL, 0)) {
 		puts("[Send Data] failed to send CMD_START_DATA!");
 		return -1;
 	}
-	
+
 	if (pktResp != 0x0080) {
 		printf("[Send Data] invalid response of CMD_START_DATA! %04x!\n", pktResp);
 		return -1;
 	}
-	
+
 	//------- transfer all data ---------
 	puts("[????????] ? (?)");
-	
+
 	uint32_t doff = 0;
 	for (;;) {
 		int psize = len > sprdIoMaxDataSz ? sprdIoMaxDataSz : len;
 		if (psize <= 0) break;
-		
+
 		printf("\e[1A[%08x] %d (%d)\n",
 			addr+doff, doff, psize);
-		
+
 		//------- Send CMD_MID_DATA --------
 		if (sprdIoDoSendCmd(0x0002, &pktResp, data+doff, psize, NULL, 0)) {
 			puts("[Send Data] failed to send CMD_MID_DATA!");
 			return -1;
 		}
-		
+
 		if (pktResp != 0x0080) {
 			printf("[Send Data] invalid response of CMD_MID_DATA! %04x!\n", pktResp);
 			return -1;
 		}
-		
+
 		doff += psize;
 		len -= psize;
 	}
@@ -353,28 +353,29 @@ int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 		puts("[Send Data] failed to send CMD_END_DATA!");
 		return -1;
 	}
-	
+
 	if (pktResp != 0x0080) {
 		printf("[Send Data] invalid response of CMD_END_DATA! %04x!\n", pktResp);
 		return -1;
 	}
-	
+
 	return 0;
 }
 
 int sprdIoDoExecData(void) {
 	uint16_t pktResp;
-	
+
 	//------- Send CMD_EXEC_DATA --------
 	if (sprdIoDoSendCmd(0x0004, &pktResp, NULL, 0, NULL, 0)) {
 		puts("[Send Data] failed to send CMD_EXEC_DATA!");
 		return -1;
 	}
-	
+
 	if (pktResp != 0x0080) {
 		printf("[Send Data] invalid response of CMD_EXEC_DATA! %04x!\n", pktResp);
 		return -1;
 	}
-	
+
 	return 0;
 }
+
