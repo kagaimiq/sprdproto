@@ -1,0 +1,5 @@
+sprdproto
+*.o
+
+BootRomComm/
+payload*
