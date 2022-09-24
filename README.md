@@ -17,8 +17,8 @@ Just take them as an example:
 
 But! Take attention at the dates when they were born.
 
-Let me tell that the "[notes](Spreadtroom Protocol.txt)" that i took about the protocol were last dated at **27th April of 2021**!
-while the **sprdproto** itself might've been written a bit earlier (Feb-March-April of 2021 for sure).
+Let me tell that the ["notes"](Spreadtroom Protocol.txt) that i took about the protocol were last dated at **27th April of 2021**!
+while the **sprdproto** itself might've been written somewhere in that time frame (March-April-May of 2021 for sure).
 
 So i am actually the first one ?!
 
@@ -29,8 +29,6 @@ But who cares afterall!
 ## Description
 
 ### sprdproto
-
-The original thing that i wrote back in **April of 2021**.
 
 `./sprdproto <payload 1 addr> <payload 1 file> [<payload 2 addr> <payload 2 file>]`
 
