@@ -17,7 +17,7 @@ Just take them as an example:
 
 But! Take attention at the dates when they were born.
 
-Let me tell that the ["notes"](Spreadtroom Protocol.txt) that i took about the protocol were last dated at **27th April of 2021**!
+Let me tell that the ["notes"](Spreadtroom_Protocol.txt) that i took about the protocol were last dated at **27th April of 2021**!
 while the **sprdproto** itself might've been written somewhere in that time frame (March-April-May of 2021 for sure).
 
 So i am actually the first one ?!
