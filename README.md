@@ -12,13 +12,3 @@ The first payload is loaded on the BootROM stage, and so, the only thing you hav
 
 The second payload is loaded on the FDL1 stage, which is provided by the first payload, and in that,
 you have access to the DRAM.
-
-## sprdrunner.py
-
-Not done yet... but for some insights:
-
-`python3 sprdrunner.py [--dram] address file`
-
-The `--dram` key is used to ensure that the DRAM is initialized (i.e. it will/should run FDL1).
-
-The `address` and `file` is obviously the load address and the file that will be executed.
