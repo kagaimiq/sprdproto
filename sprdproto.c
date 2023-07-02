@@ -32,9 +32,8 @@ int load_and_exec_file(char *path, uint32_t addr) {
 		if (rc >= 0) {
 			rc = sprd_io_exec_data();
 		} else {
-			printf("Failed to load and exec file [%s] at %08x -- %d!\n",
+			printf("Failed to load file [%s] at %08x -- %d!\n",
 				path, addr, rc);
-			rc = 0; //second stage always returns error on this stage!
 		}
 	}
 
@@ -61,11 +60,8 @@ int main(int argc, char **argv) {
 
 	int rc = 2;
 
-	/* ========= First stage ========== */
-	puts("---------- First stage ---------");
-
-	if (sprd_io_open(528, false, 10000)) {
-		printf("Failed to open a Spreadtrum device [%d:%s]\n", errno, strerror(errno));
+	if (sprd_io_open(528)) {
+		printf("Failed to open a Spreadtrum device (%d - %s)\n", errno, strerror(errno));
 		goto Exit;
 	}
 
@@ -84,16 +80,16 @@ int main(int argc, char **argv) {
 		goto ExitClose;
 	}
 
-	/* ========= Second Stage ========= */
 	if (argc >= 5) {
-		puts("---------- Second stage ---------");
 		sprd_io_close();
 
-		/* wait to device disconnect then connect again */
+		puts("=============== FDL1 ================");
+
+		/* wait for device reconnection */
 		usleep(1000000);
 
-		if (sprd_io_open(2112, true, 2000)) {
-			printf("Failed to open FDL1 device [%d:%s]\n", errno, strerror(errno));
+		if (sprd_io_open(2112)) {
+			printf("Failed to open FDL1 device (%d - %s)\n", errno, strerror(errno));
 			goto Exit;
 		}
 
@@ -107,7 +103,6 @@ int main(int argc, char **argv) {
 			goto ExitClose;
 		}
 
-		/* this always fails (the ack is then sent from U-Boot i guess) */
 		load_and_exec_file(argv[4], strtoul(argv[3], NULL, 0));
 	}
 

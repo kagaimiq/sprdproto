@@ -1,5 +1,5 @@
 TARGET = sprdproto
-OBJS   = sprdproto.o sprd_io.o
+OBJS   = sprdproto.o sprd_io.o sprd_usbdev.o
 
 CFLAGS  = -Werror
 LDFLAGS = -lusb-1.0
