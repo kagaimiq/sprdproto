@@ -11,7 +11,7 @@ int sprdIoMaxDataSz = 528, sprdIoTimeout = 10000;
 bool sprdIoUseSprdChksum = false;
 
 
-uint16_t sprdChksumCalc(const void *data, int len) {
+static uint16_t calc_sprdcheck(const void *data, int len) {
 	uint32_t ctr = 0;
 
 	while (len > 0) {
@@ -29,7 +29,7 @@ uint16_t sprdChksumCalc(const void *data, int len) {
 	return (ctr >> 8) | (ctr << 8);
 }
 
-uint16_t crc16calc(const void *data, int len, uint16_t crc) {
+static uint16_t calc_crc16(const void *data, int len, uint16_t crc) {
 	while (len--) {
 		crc ^= *(uint8_t*)(data++) << 8;
 		for (int i = 0; i < 8; i++)
@@ -40,7 +40,9 @@ uint16_t crc16calc(const void *data, int len, uint16_t crc) {
 }
 
 
-int sprdIoOpen(int maxPktSize, bool useSprdChksum, int timeout) {
+
+
+int sprd_io_open(int maxPktSize, bool useSprdChksum, int timeout) {
 	printf("wait for sprd device.");
 	while (sprdIoDev == NULL) {
 		sprdIoDev = libusb_open_device_with_vid_pid(NULL, 0x1782, 0x4d00);
@@ -65,7 +67,7 @@ int sprdIoOpen(int maxPktSize, bool useSprdChksum, int timeout) {
 	return 0;
 }
 
-void sprdIoClose(void) {
+void sprd_io_close(void) {
 	if (!sprdIoDev) return;
 
 	//libusb_control_transfer(sprdIoDev, 0x21, 34, 0x0000, 0x0000, NULL, 0, sprdIoTimeout);
@@ -73,7 +75,7 @@ void sprdIoClose(void) {
 	sprdIoDev = NULL;
 }
 
-int sprdIoSend(const uint8_t *data, int len) {
+int sprd_io_send(const uint8_t *data, int len) {
 	if (!sprdIoDev) return -1;
 
 	int trn;
@@ -83,7 +85,7 @@ int sprdIoSend(const uint8_t *data, int len) {
 	return trn;
 }
 
-int sprdIoRecv(uint8_t *data, int len) {
+int sprd_io_recv(uint8_t *data, int len) {
 	if (!sprdIoDev) return -1;
 
 	int trn;
@@ -93,7 +95,7 @@ int sprdIoRecv(uint8_t *data, int len) {
 	return trn;
 }
 
-int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
+int sprd_io_send_packet(uint16_t cmd, const uint8_t *data, uint16_t len) {
 	if (!data) len = 0;
 
 	uint8_t *packetc = malloc(2+2+len+2); //cmd+len+data+crc
@@ -113,8 +115,8 @@ int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
 		packetcLen += len;
 		//crc
 		uint16_t crc = 
-				sprdIoUseSprdChksum?sprdChksumCalc(packetc, packetcLen)
-				:crc16calc(packetc, packetcLen, 0x0000);
+				sprdIoUseSprdChksum?calc_sprdcheck(packetc, packetcLen)
+				:calc_crc16(packetc, packetcLen, 0x0000);
 		packetc[packetcLen++] = crc >> 8;
 		packetc[packetcLen++] = crc >> 0;
 
@@ -146,7 +148,7 @@ int sprdIoSendPacket(uint16_t cmd, const uint8_t *data, uint16_t len) {
 			//end
 			packet[n++] = 0x7e;
 
-			if (sprdIoSend(packet, n) < n)
+			if (sprd_io_send(packet, n) < n)
 				goto ExitFreePacket;
 			
 			//since we check for full packet transmission, we'll just
@@ -163,13 +165,13 @@ ExitFreePacket:
 	return -1;
 }
 
-int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
+int sprd_io_recv_packet(uint16_t *cmd, uint8_t *data, uint16_t len) {
 	if (!data) len = 0;
 
 	int maxPktLen = 1 + (2 + 2 + 65535 + 2)*2 + 1; //start+cmd+len+data+crc+end, twise as large to fit escaped bytes
 	uint8_t *packet = malloc(maxPktLen);
 	if (packet) {
-		int rc = sprdIoRecv(packet, maxPktLen);
+		int rc = sprd_io_recv(packet, maxPktLen);
 		if (rc <= 2) {
 			rc = -1;
 			goto ExitFreePacket;
@@ -213,8 +215,8 @@ int sprdIoRecvPacket(uint16_t *cmd, uint8_t *data, uint16_t len) {
 
 			//calculate the crc of packet contents excludng the crc itself
 			uint16_t ccrc = 
-				sprdIoUseSprdChksum?sprdChksumCalc(packetc, dataLenRecv-2)
-				:crc16calc(packetc, dataLenRecv-2, 0x0000);
+				sprdIoUseSprdChksum?calc_sprdcheck(packetc, dataLenRecv-2)
+				:calc_crc16(packetc, dataLenRecv-2, 0x0000);
 
 			n = 0;
 
@@ -253,16 +255,16 @@ ExitFreePacket:
 	return -1;
 }
 
-int sprdIoDoSendCmd(uint16_t cmd, uint16_t *resp, const void *sdata, uint16_t slen, void *rdata, uint16_t rlen) {
+int sprd_io_send_cmd(uint16_t cmd, uint16_t *resp, const void *sdata, uint16_t slen, void *rdata, uint16_t rlen) {
 	int rc;
 
-	if ((rc = sprdIoSendPacket(cmd, sdata, slen)) < slen) {
+	if ((rc = sprd_io_send_packet(cmd, sdata, slen)) < slen) {
 		printf("[SendCMD] failed to send cmd %04x, [%p %d]! [%d]\n",
 			cmd, sdata, slen, rc);
 		return -1;
 	}
 
-	if ((rc = sprdIoRecvPacket(resp, rdata, rlen)) < rlen) {
+	if ((rc = sprd_io_recv_packet(resp, rdata, rlen)) < rlen) {
 		printf("[SendCMD] failed to recv resp, [%p %d]! [%d]\n",
 			rdata, rlen, rc);
 		return -1;
@@ -271,15 +273,15 @@ int sprdIoDoSendCmd(uint16_t cmd, uint16_t *resp, const void *sdata, uint16_t sl
 	return 0;
 }
 
-int sprdIoDoHandshake(void) {
+int sprd_io_handshake(void) {
 	uint8_t tmp[64] = {0x7e};
 	uint16_t pktResp;
 	int rc;
 
-	if (sprdIoSend(tmp, 1) < 1)
+	if (sprd_io_send(tmp, 1) < 1)
 		return -1;
 
-	if ((rc = sprdIoRecvPacket(&pktResp, tmp, sizeof tmp)) < 0)
+	if ((rc = sprd_io_recv_packet(&pktResp, tmp, sizeof tmp)) < 0)
 		return -1;
 
 	printf("===> [%.*s]\n", rc, tmp);
@@ -290,11 +292,11 @@ int sprdIoDoHandshake(void) {
 	return 0;
 }
 
-int sprdIoDoConnect(void) {
+int sprd_io_connect(void) {
 	uint16_t pktResp;
 
 	//------- Send CMD_CONNECT --------
-	if (sprdIoDoSendCmd(0x0000, &pktResp, NULL, 0, NULL, 0)) {
+	if (sprd_io_send_cmd(0x0000, &pktResp, NULL, 0, NULL, 0)) {
 		puts("[Connect] failed to send CMD_CONNECT!");
 		return -1;
 	}
@@ -307,12 +309,12 @@ int sprdIoDoConnect(void) {
 	return 0;
 }
 
-int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
+int sprd_io_send_data(uint32_t addr, const uint8_t *data, uint32_t len) {
 	uint8_t tmp[8] = {addr>>24,addr>>16,addr>>8,addr, len>>24,len>>16,len>>8,len};
 	uint16_t pktResp;
 
 	//------- Send CMD_START_DATA --------
-	if (sprdIoDoSendCmd(0x0001, &pktResp, tmp, 8, NULL, 0)) {
+	if (sprd_io_send_cmd(0x0001, &pktResp, tmp, 8, NULL, 0)) {
 		puts("[Send Data] failed to send CMD_START_DATA!");
 		return -1;
 	}
@@ -334,7 +336,7 @@ int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 			addr+doff, doff, psize);
 
 		//------- Send CMD_MID_DATA --------
-		if (sprdIoDoSendCmd(0x0002, &pktResp, data+doff, psize, NULL, 0)) {
+		if (sprd_io_send_cmd(0x0002, &pktResp, data+doff, psize, NULL, 0)) {
 			puts("[Send Data] failed to send CMD_MID_DATA!");
 			return -1;
 		}
@@ -349,7 +351,7 @@ int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 	}
 
 	//------- Send CMD_END_DATA --------
-	if (sprdIoDoSendCmd(0x0003, &pktResp, NULL, 0, NULL, 0)) {
+	if (sprd_io_send_cmd(0x0003, &pktResp, NULL, 0, NULL, 0)) {
 		puts("[Send Data] failed to send CMD_END_DATA!");
 		return -1;
 	}
@@ -362,11 +364,11 @@ int sprdIoDoSendData(uint32_t addr, const uint8_t *data, uint32_t len) {
 	return 0;
 }
 
-int sprdIoDoExecData(void) {
+int sprd_io_exec_data(void) {
 	uint16_t pktResp;
 
 	//------- Send CMD_EXEC_DATA --------
-	if (sprdIoDoSendCmd(0x0004, &pktResp, NULL, 0, NULL, 0)) {
+	if (sprd_io_send_cmd(0x0004, &pktResp, NULL, 0, NULL, 0)) {
 		puts("[Send Data] failed to send CMD_EXEC_DATA!");
 		return -1;
 	}

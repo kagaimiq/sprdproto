@@ -8,7 +8,7 @@
 #include "sprd_io.h"
 
 
-int loadAndExecFile(char *path, uint32_t addr) {
+int load_and_exec_file(char *path, uint32_t addr) {
 	int rc = -1;
 	FILE *fp;
 
@@ -22,7 +22,7 @@ int loadAndExecFile(char *path, uint32_t addr) {
 			dlen = fread(dptr, 1, dlen, fp);
 
 			printf("Upload %d bytes into memory addr %08x!\n", dlen, addr);
-			rc = sprdIoDoSendData(addr, dptr, dlen);
+			rc = sprd_io_send_data(addr, dptr, dlen);
 			
 			free(dptr);
 		}
@@ -30,7 +30,7 @@ int loadAndExecFile(char *path, uint32_t addr) {
 		fclose(fp);
 
 		if (rc >= 0) {
-			rc = sprdIoDoExecData();
+			rc = sprd_io_exec_data();
 		} else {
 			printf("Failed to load and exec file [%s] at %08x -- %d!\n",
 				path, addr, rc);
@@ -64,56 +64,56 @@ int main(int argc, char **argv) {
 	/* ========= First stage ========== */
 	puts("---------- First stage ---------");
 
-	if (sprdIoOpen(528, false, 10000)) {
-		printf("failed to open spreadtrum device [%d:%s]\n", errno, strerror(errno));
+	if (sprd_io_open(528, false, 10000)) {
+		printf("Failed to open a Spreadtrum device [%d:%s]\n", errno, strerror(errno));
 		goto Exit;
 	}
 
-	if (sprdIoDoHandshake()) {
-		puts("bootrom handshake failed!");
+	if (sprd_io_handshake()) {
+		puts("BootROM handshake failed!");
 		goto ExitClose;
 	}
 
-	if (sprdIoDoConnect()) {
-		puts("bootrom connect failed!");
+	if (sprd_io_connect()) {
+		puts("BootROM connect failed!");
 		goto ExitClose;
 	}
 
-	if (loadAndExecFile(argv[2], strtoul(argv[1], NULL, 0))) {
-		puts("bootrom load&exec failed!");
+	if (load_and_exec_file(argv[2], strtoul(argv[1], NULL, 0))) {
+		puts("BootROM load&exec failed!");
 		goto ExitClose;
 	}
 
 	/* ========= Second Stage ========= */
 	if (argc >= 5) {
 		puts("---------- Second stage ---------");
-		sprdIoClose();
+		sprd_io_close();
 
 		/* wait to device disconnect then connect again */
 		usleep(1000000);
 
-		if (sprdIoOpen(2112, true, 2000)) {
-			printf("failed to open fdl device [%d:%s]\n", errno, strerror(errno));
+		if (sprd_io_open(2112, true, 2000)) {
+			printf("Failed to open FDL1 device [%d:%s]\n", errno, strerror(errno));
 			goto Exit;
 		}
 
-		if (sprdIoDoHandshake()) {
-			puts("fdl handshake failed!");
+		if (sprd_io_handshake()) {
+			puts("FDL1 handshake failed!");
 			goto ExitClose;
 		}
 
-		if (sprdIoDoConnect()) {
-			puts("fdl connect failed!");
+		if (sprd_io_connect()) {
+			puts("FDL1 connect failed!");
 			goto ExitClose;
 		}
 
 		/* this always fails (the ack is then sent from U-Boot i guess) */
-		loadAndExecFile(argv[4], strtoul(argv[3], NULL, 0));
+		load_and_exec_file(argv[4], strtoul(argv[3], NULL, 0));
 	}
 
 	rc = 0;
 ExitClose:
-	sprdIoClose();
+	sprd_io_close();
 Exit:
 	libusb_exit(NULL);
 	return rc;
