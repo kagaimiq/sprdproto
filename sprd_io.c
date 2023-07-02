@@ -129,16 +129,16 @@ int sprd_io_send_packet(uint16_t cmd, void *data, uint16_t len) {
 		memcpy(&pktbody[datalen], data, len);
 		datalen += len;
 		/* Checksum */
-		uint16_t crc = calc_check(pktbody, datalen);
-		pktbody[datalen++] = crc >> 8;
-		pktbody[datalen++] = crc >> 0;
+		uint16_t check = calc_check(pktbody, datalen);
+		pktbody[datalen++] = check >> 8;
+		pktbody[datalen++] = check >> 0;
 
 		/* Calculate the real packet length */
-		int pktlen = 0;
+		int pktlen = datalen;
 		for (int i = 0; i < datalen; i++) {
-			pktlen++;
-			if (pktbody[i] == 0x7d) pktlen++;
-			if (pktbody[i] == 0x7e) pktlen++;
+			/* Account for an extra escape byte */
+			if (pktbody[i] == 0x7d || pktbody[i] == 0x7e)
+				pktlen++;
 		}
 
 		/* Make a packet */
@@ -150,9 +150,9 @@ int sprd_io_send_packet(uint16_t cmd, void *data, uint16_t len) {
 			packet[n++] = 0x7e;
 
 			/* body */
-			for (int i = 0; i < pktlen; i++) {
+			for (int i = 0; i < datalen; i++) {
 				/* Escape the bytes that shouldn't appear as-is */
-				if ((pktbody[i] == 0x7d) || (pktbody[i] == 0x7e)) {
+				if (pktbody[i] == 0x7d || pktbody[i] == 0x7e) {
 					packet[n++] = 0x7d;
 					packet[n++] = pktbody[i] ^ 0x20;
 					continue;
@@ -346,8 +346,8 @@ int sprd_io_send_data(uint32_t addr, void *data, uint32_t len) {
 		int psize = len - off;
 		if (psize > max_data_sz) psize = max_data_sz;
 
-		printf("\e[1A[%08x] %d (%d)\n",
-			addr + off, off, psize);
+		printf("\e[1A[%08x] %d/%d (%d)\n",
+			addr + off, off, len, psize);
 
 		if ((rc = sprd_io_send_cmd(BSL_CMD_MIDST_DATA, data + off, psize, NULL, 0)) < 0) {
 			puts("[Send Data] failed to send CMD_MID_DATA!");
