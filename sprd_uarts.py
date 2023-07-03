@@ -12,6 +12,9 @@ ap.add_argument('--port', required=True,
 ap.add_argument('--baud', type=int, default=115200,
                 help='Baudrate to use (default is %(default)d baud)')
 
+ap.add_argument('--blksize', type=int, default=528,
+                help='Transmission block size (default: %(default)d bytes)')
+
 ap.add_argument('addr', type=anyint,
                 help='Load address')
 
@@ -45,14 +48,21 @@ with serial.Serial(args.port, args.baud, timeout=1) as port:
 
     while True:
         rd = port.read(1)
-        if rd == b'': continue
 
+        #
+        # We should only receive 0x55's in a row, any other character
+        # or a timeout will make it go all over again.
+        #
         if rd == b'\x55':
             cnt += 1
         else:
             cnt = 0
 
-        if cnt == 4:
+        #
+        # If we received three (out of five) 0x55's in a row, then we're done!
+        # Send three 0x7E's and proceed to sending packets.
+        #
+        if cnt == 3:
             port.write(b'\x7e' * 3)
             break
 
@@ -65,7 +75,7 @@ with serial.Serial(args.port, args.baud, timeout=1) as port:
 
         for b in data:
             if b in (0x7d, 0x7e):
-                odata += b'\x7f'
+                odata += b'\x7d'
                 b ^= 0x20
             odata += bytes([b])
 
@@ -99,7 +109,6 @@ with serial.Serial(args.port, args.baud, timeout=1) as port:
     def send_packet(cmd, data):
         pdata = struct.pack('>HH', cmd, len(data)) + data
         pdata += struct.pack('>H', calc_crc16(pdata))
-        print('>>', pdata.hex())
         send_raw_packet(pdata)
 
     def recv_packet():
@@ -131,28 +140,79 @@ with serial.Serial(args.port, args.baud, timeout=1) as port:
     BSL_REP_ACK                 = 0x0080
     BSL_REP_VER                 = 0x0081
 
+    #
+    # Initial handshake (empty packet)
+    #
     send_raw_packet(b'')
-    print(recv_packet())
+    resp, rdata = recv_packet()
 
+    if resp != BSL_REP_VER:
+        raise Exception('Unexpected response during handshake: %04x' % resp)
+
+    print('Version:', rdata)
+
+    #
+    # Connect
+    #
     send_packet(BSL_CMD_CONNECT, b'')
-    print(recv_packet())
+    resp, rdata = recv_packet()
 
+    if resp != BSL_REP_ACK:
+        raise Exception('Unexpected response during connection: %04x' % resp)
+
+    #
+    # Upload the file!
+    #
     with open(args.file, 'rb') as f:
         size = f.seek(0, 2)
         f.seek(0)
 
-        send_packet(BSL_CMD_START_DATA, struct.pack('>II', args.addr, size))
-        print(recv_packet())
+        print("Sending %d bytes to address %08x..." % (size, args.addr))
 
+        #
+        # Start data transmission
+        #
+        send_packet(BSL_CMD_START_DATA, struct.pack('>II', args.addr, size))
+        resp, rdata = recv_packet()
+
+        if resp != BSL_REP_ACK:
+            raise Exception('Failed to start data transmission: %04x' % resp)
+
+        #
+        # Send the data
+        #
         while True:
-            data = f.read(512)
+            data = f.read(args.blksize)
             if data == b'': break
 
             send_packet(BSL_CMD_MIDST_DATA, data)
-            print(recv_packet())
+            resp, rdata = recv_packet()
 
+            if resp != BSL_REP_ACK:
+                raise Exception('Failed to send data: %02x' % resp)
+
+            fpos = f.tell() - len(data)
+
+            print("\rWritten to %08x from %x" % (fpos + args.addr, fpos), end='', flush=True)
+
+        print()
+
+        #
+        # End data transmission
+        # 
         send_packet(BSL_CMD_END_DATA, b'')
-        print(recv_packet())
+        resp, rdata = recv_packet()
 
+        if resp != BSL_REP_ACK:
+            raise Exception('Failed to end data transmission: %04x' % resp)
+
+        #
+        # Execute the uploaded data
+        #
         send_packet(BSL_CMD_EXEC_DATA, b'')
-        print(recv_packet())
+        resp, rdata = recv_packet()
+
+        if resp != BSL_REP_ACK:
+            raise Exception('Failed execute uploaded data: %04x' % resp)
+
+        print("Done!")
