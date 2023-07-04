@@ -1,4 +1,4 @@
-import argparse, struct
+import argparse, struct, time
 import serial, crcmod
 
 ap = argparse.ArgumentParser(description='Spreadtrum UART special')
@@ -7,13 +7,13 @@ def anyint(s):
     return int(s, 0)
 
 ap.add_argument('--port', required=True,
-                help='Serial port where the Spreadtrum device is connected to')
+                help="Serial port where the Spreadtrum's UART is connected to")
 
 ap.add_argument('--baud', type=int, default=115200,
                 help='Baudrate to use (default is %(default)d baud)')
 
 ap.add_argument('--blksize', type=int, default=528,
-                help='Transmission block size (default: %(default)d bytes)')
+                help='Block size (default is %(default)d bytes)')
 
 ap.add_argument('addr', type=anyint,
                 help='Load address')
@@ -185,15 +185,21 @@ with serial.Serial(args.port, args.baud, timeout=1) as port:
             data = f.read(args.blksize)
             if data == b'': break
 
+            t = time.time()
             send_packet(BSL_CMD_MIDST_DATA, data)
             resp, rdata = recv_packet()
+            t = time.time() - t
 
             if resp != BSL_REP_ACK:
                 raise Exception('Failed to send data: %02x' % resp)
 
-            fpos = f.tell() - len(data)
-
-            print("\rWritten to %08x from %x" % (fpos + args.addr, fpos), end='', flush=True)
+            print("\r[%08x] Sent %d of %d bytes (%d%%) - %d byte/s" % (
+                    args.addr + f.tell() - len(data),
+                    f.tell(),
+                    size,
+                    (f.tell() / size) * 100,
+                    len(data) / t
+                ), end='', flush=True)
 
         print()
 
