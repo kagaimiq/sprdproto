@@ -1,7 +1,3 @@
-/*
- * This is pure mess.
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -184,7 +180,7 @@ int sprd_io_recv_packet(uint16_t *resp, void *data, uint16_t len) {
 	if (!data) len = 0;
 
 	/* packet length - start and stop, body is twice as large to fit escaped bytes */
-	int maxlen = 1 + (2 + 2 + max_data_sz + 2)*2 + 1;
+	int maxlen = 1 + (2+2 + max_data_sz + 2)*2 + 1;
 
 	uint8_t *packet = malloc(maxlen);
 	if (packet) {
@@ -205,7 +201,7 @@ int sprd_io_recv_packet(uint16_t *resp, void *data, uint16_t len) {
 
 		/* Find packet end */
 		int pktlen = 0;
-		while (pktlen < rc) {
+		while ((n + pktlen) < rc) {
 			if (packet[n + pktlen++] == 0x7e) break;
 		}
 
@@ -346,9 +342,6 @@ int sprd_io_send_data(uint32_t addr, void *data, uint32_t len) {
 		int psize = len - off;
 		if (psize > max_data_sz) psize = max_data_sz;
 
-		printf("\e[1A[%08x] %d/%d (%d)\n",
-			addr + off, off, len, psize);
-
 		if ((rc = sprd_io_send_cmd(BSL_CMD_MIDST_DATA, data + off, psize, NULL, 0)) < 0) {
 			puts("[Send Data] failed to send CMD_MID_DATA!");
 			return -1;
@@ -360,6 +353,9 @@ int sprd_io_send_data(uint32_t addr, void *data, uint32_t len) {
 		}
 
 		off += psize;
+
+		printf("\e[1A[%08x] Written %d of %d bytes (%d%%)\n",
+			addr + off - psize, off, len, off * 100 / len);
 	}
 
 	if ((rc = sprd_io_send_cmd(BSL_CMD_END_DATA, NULL, 0, NULL, 0)) < 0) {
